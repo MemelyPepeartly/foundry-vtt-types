@@ -11,7 +11,24 @@ export default abstract class Document<
 > {
     constructor(data: object, context?: DocumentConstructionContext<Document | null>);
 
+    // Properties from `DataModel` ported over during system types transition
     _id: string | null;
+    readonly _source: object;
+    protected _configure(): void;
+    get invalid(): boolean;
+    static validateJoint(data: SourceFromSchema<DataSchema>): void;
+    /**
+     * Create a new instance of this DataModel from a source record.
+     * The source is presumed to be trustworthy and is not strictly validated.
+     * @param source    Initial document data which comes from a trusted source.
+     * @param [context] Model construction context
+     * @param [context.strict=false]   Models created from trusted source data are validated non-strictly
+     */
+    static fromSource<T extends Document>(
+        this: AbstractConstructorOf<T>,
+        source: Record<string, unknown>,
+        context?: DataModelConstructionOptions<null>
+    ): T;
 
     /** An immutable reverse-reference to the parent Document to which this embedded Document belongs. */
     readonly parent: TParent;
@@ -19,7 +36,6 @@ export default abstract class Document<
     /** An immutable reference to a containing Compendium collection to which this Document belongs. */
     readonly pack: string | null;
 
-    _source: object;
     get schema(): SchemaField<TSchema>;
 
     // actually in `DataModel`
@@ -610,10 +626,10 @@ type _Document = Document<_Document | null>;
 
 declare global {
     type PreCreate<T extends object> = T extends { name: string; type: string }
-        ? Omit<DeepPartial<T>, "name" | "type"> & { name: string; type: T["type"] }
+        ? Omit<DeepPartial<T>, "_id" | "name" | "type"> & { _id?: Maybe<string>; name: string; type: T["type"] }
         : DeepPartial<T>;
 
-    type PreDocumentId<T extends object> = Omit<T, "_id"> & { _id: null };
+    type PreDocumentId<T extends object> = Omit<T, "_id"> & { _id: string | null };
 
     type DocumentUpdateData<T extends Document = Document> = Partial<T["_source"]> | Record<string, unknown>;
 
@@ -627,15 +643,9 @@ declare global {
 
     type DocumentFlags = Record<string, Record<string, unknown> | undefined>;
 
-    type RawObject<T extends Document> = {
-        [P in keyof T["_source"]]: T[P] extends EmbeddedCollection<infer U>
-            ? RawObject<U>[]
-            : T[P] extends Document
-            ? RawObject<T[P]>
-            : T[P] extends Document[]
-            ? RawObject<T[P][number]>[]
-            : T[P];
-    };
+    type RawObject<TDocument extends Document> = TDocument extends { system: infer TSystem }
+        ? Omit<TDocument, "system"> & { system: TSystem }
+        : TDocument["_source"];
 
     interface DocumentCloneOptions extends Omit<DocumentConstructionContext<null>, "parent"> {
         save?: boolean;
